@@ -38,9 +38,9 @@ A Python/Flet application for processing and validating Simple Archive Format (S
 ### Requirements
 - Python 3.7+
 - Required packages:
-  ```bash
-  pip install flet PyMuPDF
-  ```
+```bash
+pip install flet PyMuPDF
+```
 
 ### Run the Application
 ```bash
