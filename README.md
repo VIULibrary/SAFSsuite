@@ -7,7 +7,7 @@ A Python/Flet application for processing and validating Simple Archive Format (S
 
 ### 📋 CSV Validator
 
-![CSV Validator](img/validator.png)
+![CSV Validator](Img/validator.png)
 
 - **Validates CSV files** against corresponding PDF files in directory structures
 - **Identifies missing files** and inconsistencies between metadata and actual content
@@ -17,7 +17,7 @@ A Python/Flet application for processing and validating Simple Archive Format (S
 
 ### 📄 PDF Reverter
 
-![PDF Reverter](img/reverter.png)
+![PDF Reverter](Img/reverter.png)
 
 - **Color inversion** for PDF files (converts white text on black background to black text on white)
 - **Batch processing** with recursive directory scanning
@@ -26,7 +26,7 @@ A Python/Flet application for processing and validating Simple Archive Format (S
 - **Error handling** with detailed status reports
 
 ### 🏗️ SAF Builder
-![SAF Builder](img/safBuilder.png)
+![SAF Builder](Img/safBuilder.png)
 - **Creates DSpace Simple Archive Format packages** from CSV metadata files
 - **Automated package generation** for multiple directories/months
 - **Dublin Core metadata mapping** from CSV columns
