@@ -26,7 +26,7 @@ A Python/Flet application for processing and validating Simple Archive Format (S
 - **Error handling** with detailed status reports
 
 ### 🏗️ SAF Builder
-![SAF Builder](Img/safBuilder.png)
+![SAF Builder](Img/safbuilder.png)
 - **Creates DSpace Simple Archive Format packages** from CSV metadata files
 - **Automated package generation** for multiple directories/months
 - **Dublin Core metadata mapping** from CSV columns
