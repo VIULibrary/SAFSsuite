@@ -117,7 +117,7 @@ python Deconstructed/dircleaner.py [/path/to/dir]
 
 1. **New Archive Processing**:
    - Run CSV Validator to ensure data integrity at any directory level
-   - Use PDF Re-inverter to fix color issues across any folder structure
+   - Use PDF Reverter to fix color issues across any folder structure
    - Generate SAF packages with SAF Builder from any organized structure
 
 ## Troubleshooting
