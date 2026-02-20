@@ -96,7 +96,7 @@ python SAFsuite.py
 2. Click **"Source Credentials"** - enter your password/login
 3. Click  **"Choose Directory"** - to locate the files you wish to upload
 5. Add a **"Container name"** to name and/or create a container
-6. Uplaod your files
+6. Upload your files
 
 
 
