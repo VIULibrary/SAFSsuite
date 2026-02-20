@@ -3,12 +3,15 @@
 # SAFSuite — CSV Validator and PDF Reverter
 
 import csv
+import os
+import re
 import threading
 from pathlib import Path
 from collections import defaultdict
 import flet as ft
 from Deconstructed.reverter import invert_pdf
 from Deconstructed.safBuilder import build_saf
+from Deconstructed.stackimporter import upload_directory, check_auth
 
 
 # ── CSV validation logic ──────────────────────────────────────────────────────
@@ -725,6 +728,338 @@ def build_saf_tab(page: ft.Page):
     )
 
 
+# ── OpenStack Uploader tab ────────────────────────────────────────────────────
+
+
+def _parse_openrc(sh_path: str) -> dict:
+    """Extract static export VAR=VALUE entries from an openrc shell script."""
+    result = {}
+    try:
+        with open(sh_path) as f:
+            for line in f:
+                m = re.match(r'^\s*export\s+(\w+)=(.+)$', line.strip())
+                if m:
+                    key = m.group(1)
+                    val = m.group(2).strip().strip('"').strip("'")
+                    if key != "OS_PASSWORD":
+                        result[key] = val
+    except OSError:
+        pass
+    return result
+
+
+def build_uploader_tab(page: ft.Page):
+    source_path      = ft.Ref[ft.Text]()
+    openrc_path_text = ft.Ref[ft.Text]()
+    cred_status      = ft.Ref[ft.Text]()
+    source_cred_btn  = ft.Ref[ft.ElevatedButton]()
+    upload_btn       = ft.Ref[ft.ElevatedButton]()
+    progress_col     = ft.Ref[ft.Column]()
+    auth_log_col     = ft.Ref[ft.Column]()
+
+    container_field = ft.TextField(
+        value="saf-transfer",
+        label="Container name",
+        width=280,
+        text_size=13,
+    )
+
+    state = {
+        "source":       None,
+        "env":          None,   # merged env dict once credentials are loaded
+        "rc_path":      None,
+        "static_vars":  {},
+    }
+
+    # ── openrc file picker ────────────────────────────────────────────────────
+
+    def _on_rc_selected(e: ft.FilePickerResultEvent):
+        if not e.files:
+            return
+        path = e.files[0].path
+        state["rc_path"] = path
+        state["static_vars"] = _parse_openrc(path)
+        openrc_path_text.current.value = path
+        openrc_path_text.current.color = ft.Colors.WHITE
+        # Pre-fill username from the rc file
+        username_field.value = state["static_vars"].get("OS_USERNAME", "")
+        source_cred_btn.current.disabled = False
+        page.update()
+
+    openrc_picker = ft.FilePicker(on_result=_on_rc_selected)
+    page.overlay.append(openrc_picker)
+
+    # ── credential dialog ─────────────────────────────────────────────────────
+
+    username_field = ft.TextField(
+        label="Username",
+        value="",
+        width=300,
+        text_size=13,
+        autofocus=True,
+    )
+    password_field = ft.TextField(
+        label="Password",
+        password=True,
+        can_reveal_password=True,
+        width=300,
+        text_size=13,
+    )
+
+    def close_dialog(e=None):
+        cred_dialog.open = False
+        page.update()
+
+    def on_connect(e):
+        username = username_field.value.strip()
+        password = password_field.value.strip()
+        if not username or not password:
+            return
+
+        # Merge: system env + rc file static vars + username/password from dialog
+        env = {**os.environ, **state["static_vars"]}
+        env["OS_USERNAME"] = username
+        env["OS_PASSWORD"] = password
+
+        close_dialog()
+
+        # Verify auth in background — updates status label when done
+        def verify():
+            auth_log_col.current.controls.clear()
+
+            def log_auth(msg):
+                auth_log_col.current.controls.append(
+                    ft.Text(msg, size=12, color=ft.Colors.GREY_400, font_family="monospace")
+                )
+                page.update()
+
+            cred_status.current.value = "Verifying credentials…"
+            cred_status.current.color = ft.Colors.GREY_400
+            page.update()
+
+            log_auth(f"Loaded {len(state['static_vars'])} vars from {state['rc_path']}")
+
+            ok, msg = check_auth(env, log=log_auth)
+            if ok:
+                state["env"] = env
+                project = env.get("OS_PROJECT_NAME", "")
+                cred_status.current.value = f"Connected — {username} @ {project}"
+                cred_status.current.color = ft.Colors.GREEN_400
+            else:
+                state["env"] = None
+                cred_status.current.value = f"Auth failed: {msg}"
+                cred_status.current.color = ft.Colors.RED_400
+
+            _refresh_upload_btn()
+            page.update()
+
+        threading.Thread(target=verify, daemon=True).start()
+
+    cred_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("OpenStack Credentials"),
+        content=ft.Column(
+            [username_field, password_field],
+            spacing=12,
+            tight=True,
+        ),
+        actions=[
+            ft.TextButton("Cancel", on_click=close_dialog),
+            ft.TextButton("Connect", on_click=on_connect),
+        ],
+        actions_alignment=ft.MainAxisAlignment.END,
+    )
+    page.overlay.append(cred_dialog)
+
+    def open_cred_dialog(e):
+        password_field.value = ""
+        cred_dialog.open = True
+        page.update()
+
+    # ── source directory picker ───────────────────────────────────────────────
+
+    source_picker = ft.FilePicker(on_result=lambda e: _on_source_selected(e))
+    page.overlay.append(source_picker)
+
+    def _on_source_selected(e: ft.FilePickerResultEvent):
+        if not e.path:
+            return
+        state["source"] = e.path
+        source_path.current.value = e.path
+        source_path.current.color = ft.Colors.WHITE
+        _refresh_upload_btn()
+        page.update()
+
+    # ── upload button state ───────────────────────────────────────────────────
+
+    def _refresh_upload_btn():
+        ready = bool(state["source"] and state["env"])
+        upload_btn.current.disabled = not ready
+
+    # ── upload worker ─────────────────────────────────────────────────────────
+
+    def run_upload(e):
+        if not state["source"] or not state["env"]:
+            return
+
+        container = container_field.value.strip() or "saf-transfer"
+        progress_col.current.controls.clear()
+        upload_btn.current.disabled = True
+        page.update()
+
+        def log_line(msg, color=ft.Colors.GREY_300):
+            progress_col.current.controls.append(
+                ft.Text(msg, size=12, color=color, font_family="monospace")
+            )
+            page.update()
+
+        def worker():
+            summary_label = ft.Text(
+                "Uploading…", size=13, weight=ft.FontWeight.W_500, color=ft.Colors.GREY_400
+            )
+            summary_box = ft.Container(
+                content=summary_label,
+                padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                border_radius=8,
+                bgcolor=ft.Colors.GREY_900,
+                margin=ft.margin.only(bottom=8),
+            )
+            progress_col.current.controls.insert(0, summary_box)
+            page.update()
+
+            try:
+                success, total = upload_directory(
+                    source_dir=state["source"],
+                    container=container,
+                    env=state["env"],
+                    log=log_line,
+                )
+                if total == 0:
+                    s_msg   = "No files found in the selected directory."
+                    s_color = ft.Colors.ORANGE_400
+                    s_bg    = ft.Colors.ORANGE_900
+                elif success == total:
+                    s_msg   = f"Done — {success}/{total} files uploaded successfully."
+                    s_color = ft.Colors.GREEN_400
+                    s_bg    = ft.Colors.GREEN_900
+                else:
+                    s_msg   = f"Finished with errors — {success}/{total} files succeeded."
+                    s_color = ft.Colors.ORANGE_400
+                    s_bg    = ft.Colors.ORANGE_900
+            except Exception as err:
+                s_msg   = f"Upload failed: {err}"
+                s_color = ft.Colors.RED_400
+                s_bg    = ft.Colors.RED_900
+
+            summary_label.value  = s_msg
+            summary_label.color  = s_color
+            summary_box.bgcolor  = s_bg
+            upload_btn.current.disabled = False
+            page.update()
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    # ── layout ────────────────────────────────────────────────────────────────
+
+    return ft.Container(
+        expand=True,
+        padding=20,
+        content=ft.Column(
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+            controls=[
+                ft.Text("OpenStack Uploader", size=22, weight=ft.FontWeight.BOLD),
+                ft.Text(
+                    "Upload SAF packages to an OpenStack Swift container, preserving folder structure.",
+                    color=ft.Colors.GREY_400,
+                    size=13,
+                ),
+                ft.Divider(height=20),
+
+                # ── credentials ──────────────────────────────────────────────
+                ft.Text("Credentials", size=12, color=ft.Colors.GREY_500),
+                ft.Row(
+                    [
+                        ft.ElevatedButton(
+                            "Choose RC File",
+                            icon=ft.Icons.UPLOAD_FILE,
+                            on_click=lambda _: openrc_picker.pick_files(
+                                allowed_extensions=["sh"],
+                                dialog_title="Select OpenStack RC file",
+                            ),
+                        ),
+                        ft.Text(
+                            "No file selected",
+                            ref=openrc_path_text,
+                            color=ft.Colors.GREY_500,
+                            size=13,
+                            expand=True,
+                        ),
+                    ],
+                    spacing=12,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Row(
+                    [
+                        ft.ElevatedButton(
+                            "Source Credentials",
+                            ref=source_cred_btn,
+                            icon=ft.Icons.LOCK,
+                            on_click=open_cred_dialog,
+                            disabled=True,
+                        ),
+                        ft.Text(
+                            "Not connected",
+                            ref=cred_status,
+                            color=ft.Colors.GREY_500,
+                            size=13,
+                            expand=True,
+                        ),
+                    ],
+                    spacing=12,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Column(ref=auth_log_col, spacing=1),
+                ft.Divider(height=4),
+
+                # ── source directory ──────────────────────────────────────────
+                ft.Text("Source directory", size=12, color=ft.Colors.GREY_500),
+                ft.Row(
+                    [
+                        ft.ElevatedButton(
+                            "Choose Directory",
+                            icon=ft.Icons.FOLDER_OPEN,
+                            on_click=lambda _: source_picker.get_directory_path(),
+                        ),
+                        ft.Text(
+                            "No directory selected",
+                            ref=source_path,
+                            color=ft.Colors.GREY_500,
+                            size=13,
+                            expand=True,
+                        ),
+                    ],
+                    spacing=12,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Divider(height=4),
+
+                # ── container + upload ────────────────────────────────────────
+                container_field,
+                ft.ElevatedButton(
+                    "Upload",
+                    ref=upload_btn,
+                    icon=ft.Icons.CLOUD_UPLOAD,
+                    on_click=run_upload,
+                    disabled=True,
+                ),
+                ft.Divider(height=16),
+                ft.Column(ref=progress_col, spacing=0),
+            ],
+        ),
+    )
+
+
 # ── App entry point ───────────────────────────────────────────────────────────
 
 def main(page: ft.Page):
@@ -751,6 +1086,11 @@ def main(page: ft.Page):
                     text="SAF Builder",
                     icon=ft.Icons.BUILD,
                     content=build_saf_tab(page),
+                ),
+                ft.Tab(
+                    text="OpenStack Uploader",
+                    icon=ft.Icons.CLOUD_UPLOAD,
+                    content=build_uploader_tab(page),
                 ),
             ],
             expand=True,

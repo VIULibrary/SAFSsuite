@@ -33,6 +33,22 @@ A Python/Flet application for processing and validating Simple Archive Format (S
 - **Batch processing** for entire year/month hierarchies
 - **Organized output structure** with proper SAF formatting
 
+
+### 🏗️ OpenStack Uploader
+![OpenStack Uploader](Img/uploader.png)
+- For distributed teams that need to share these files prior to importing into dpsace
+- **Sources API credentails**
+- **Creates containers** if needed
+- **Segemented uploads** if needed
+- **Progress tracking** for large file sets
+- **Error handling** with detailed status reports
+
+
+
+
+
+
+
 ## Installation
 
 ### Requirements
@@ -74,6 +90,15 @@ python SAFsuite.py
 4. Review the detected CSV files count
 5. Click **"Build SAF"** to generate Simple Archive Format packages
 6. Each directory with a CSV file will be processed into individual SAF packages
+
+### 4. Open Stack Uploader Tab
+1. Click **"Choose RC File"** - to locate your `public-openrc.sh`API credentials
+2. Click **"Source Credentials"** - enter your password/login
+3. Click  **"Choose Directory"** - to locate the files you wish to upload
+5. Add a **"Container name"** to name and/or create a container
+6. Uplaod your files
+
+
 
 ## Directory Structure
 
@@ -119,6 +144,7 @@ python Deconstructed/dircleaner.py [/path/to/dir]
    - Run CSV Validator to ensure data integrity at any directory level
    - Use PDF Reverter to fix color issues across any folder structure
    - Generate SAF packages with SAF Builder from any organized structure
+   - Upload your files to OpenStack if needed
 
 ## Troubleshooting
 
