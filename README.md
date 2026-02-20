@@ -55,7 +55,7 @@ A Python/Flet application for processing and validating Simple Archive Format (S
 - Python 3.7+
 - Required packages:
 ```bash
-pip install flet PyMuPDF
+pip install flet PyMuPDF python-swiftclient
 ```
 
 ### Run the Application
