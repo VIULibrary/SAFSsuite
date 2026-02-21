@@ -37,7 +37,7 @@ A Python/Flet application for processing and validating Simple Archive Format (S
 ### 🏗️ OpenStack Uploader
 ![OpenStack Uploader](Img/uploader.png)
 - For distributed teams that need to share these files prior to importing into dpsace
-- **Sources API credentails**
+- **Sources API credentials** see this doc on - [Setting environment variables using the OpenStack RC file](https://docs.openstack.org/newton/user-guide/common/cli-set-environment-variables-using-openstack-rc.html) for more details
 - **Creates containers** if needed
 - **Segemented uploads** if needed
 - **Progress tracking** for large file sets
